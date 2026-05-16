@@ -1,0 +1,65 @@
+{
+  "slug": "introduction-a-docker-pour-debutants",
+  "title": "Découvrez le pouvoir de Docker : Introduction pour débutants",
+  "description": "Apprenez les bases de Docker et découvrez comment il peut vous aider à créer et à déployer des applications rapidement et efficacement. Ce cours est conçu pour les débutants qui veulent comprendre les fondements de Docker.",
+  "level": "debutant",
+  "icon": "🚀",
+  "tags": [
+    "docker",
+    "backend",
+    "devops"
+  ],
+  "price": 5000,
+  "free_chapters": 2,
+  "version": "1.0.0",
+  "chapters": [
+    {
+      "file": "01-introduction.md",
+      "title": "Introduction à Docker : Pourquoi Docker est une révolution en développement"
+    },
+    {
+      "file": "02-concepts-de-base.md",
+      "title": "Les concepts fondamentaux de Docker : Images, conteneurs, registres"
+    },
+    {
+      "file": "03-installation-et-configuration.md",
+      "title": "Installation et configuration de Docker sur votre machine"
+    },
+    {
+      "file": "04-premiers-conteneurs.md",
+      "title": "Lancement et gestion de vos premiers conteneurs"
+    },
+    {
+      "file": "05-creer-des-images-avec-dockerfile.md",
+      "title": "Créer vos propres images avec Dockerfile"
+    },
+    {
+      "file": "06-gestion-des-volumes-et-reseaux.md",
+      "title": "Gestion des volumes et des réseaux Docker"
+    },
+    {
+      "file": "07-docker-compose.md",
+      "title": "Orchestration avec Docker Compose : Gérer plusieurs conteneurs"
+    },
+    {
+      "file": "08-environnements-de-developpement-isoles.md",
+      "title": "Créer des environnements de développement isolés avec Docker"
+    },
+    {
+      "file": "09-deploiement-des-conteneurs.md",
+      "title": "Déploiement de conteneurs sur un serveur distant"
+    },
+    {
+      "file": "10-securite-et-bonnes-pratiques.md",
+      "title": "Sécurité et bonnes pratiques avec Docker"
+    },
+    {
+      "file": "11-projet-integratif.md",
+      "title": "Projet intégratif : Application web complète avec Docker"
+    },
+    {
+      "file": "12-suite-du-parcours.md",
+      "title": "Et après Docker ? Les prochaines étapes"
+    }
+  ]
+}
