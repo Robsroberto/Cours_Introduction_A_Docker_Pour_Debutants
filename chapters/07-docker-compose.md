@@ -1,14 +1,16 @@
-## Orchestration avec Docker Compose : Gérer plusieurs conteneurs
+## Orchestration avec Docker Compose : gérer plusieurs conteneurs
 
-Travailler avec un seul conteneur est utile, mais les applications modernes sont rarement composées d’un seul service. Un site web typique, par exemple, combine un serveur web (comme Nginx ou Apache), une base de données (comme MySQL ou PostgreSQL) et souvent un backend (comme une API en Node.js ou Python). Gérer ces conteneurs un par un devient rapidement complexe, fastidieux, et sujet aux erreurs.
+Lorsque vous développez des applications modernes, il est rare qu’un seul conteneur suffise. Une application web typique repose souvent sur plusieurs composants : un serveur web, une base de données, un service de mise en cache, et parfois un outil de file d’attente ou de monitoring. Gérer chacun de ces conteneurs manuellement avec des commandes `docker run` longues et complexes devient vite fastidieux et source d’erreurs.
 
-C’est ici que **Docker Compose** entre en jeu. Cet outil, fourni avec Docker, permet de **définir, configurer et exécuter des applications multi-conteneurs** à l’aide d’un seul fichier de configuration : `docker-compose.yml`. Grâce à lui, vous pouvez lancer toute votre application avec une seule commande : `docker-compose up`.
+C’est ici que **Docker Compose** entre en jeu.
+
+Docker Compose est un outil puissant qui permet de définir et exécuter des applications composées de plusieurs conteneurs à partir d’un seul fichier de configuration : `docker-compose.yml`. Ce fichier décrit tous les services dont votre application a besoin, leurs dépendances, leurs variables d’environnement, leurs ports exposés et leurs volumes.
 
 ### Comprendre le fichier docker-compose.yml
 
-Le cœur de Docker Compose est le fichier `docker-compose.yml`. Il est écrit en **YAML** (YAML Ain’t Markup Language), un format lisible et structuré. Ce fichier décrit tous les services qui composent votre application, ainsi que leurs dépendances, réseaux, volumes, et variables d’environnement.
+Le fichier `docker-compose.yml` est écrit en **YAML**, un format simple et lisible qui permet d’organiser des données hiérarchiques. Il contient une série de sections qui définissent vos services, réseaux et volumes.
 
-Voici une structure typique :
+Voici un exemple de structure de base :
 
 ```yaml
 version: '3.8'
@@ -18,214 +20,234 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
-    volumes:
-      - ./html:/usr/share/nginx/html
+    depends_on:
+      - app
+    networks:
+      - app-network
 
-  db:
+  app:
+    build: .
+    environment:
+      - DB_HOST=database
+      - REDIS_URL=cache:6379
+    networks:
+      - app-network
+
+  database:
     image: mysql:8.0
     environment:
       MYSQL_ROOT_PASSWORD: password123
-      MYSQL_DATABASE: app_db
+      MYSQL_DATABASE: myapp
     volumes:
-      - db_data:/var/lib/mysql
+      - db-data:/var/lib/mysql
+    networks:
+      - app-network
 
-  backend:
-    build: ./backend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
+  cache:
+    image: redis:alpine
+    networks:
+      - app-network
 
 volumes:
-  db_data:
-```
+  db-data:
 
-Analysons chaque section.
-
-### Les services : les briques de votre application
-
-La section `services` définit chaque conteneur qui sera lancé. Chaque service correspond à un conteneur.
-
-- **`web`** : Utilise l’image `nginx:alpine`, expose le port 80, et monte un dossier local (`./html`) dans le conteneur. Utile pour servir un site statique.
-- **`db`** : Lance une base MySQL. On définit des variables d’environnement pour configurer le mot de passe et la base de données par défaut.
-- **`backend`** : Construit une image à partir d’un Dockerfile situé dans `./backend`. Cela permet de personnaliser l’application (par exemple, une API Node.js).
-
-La directive `depends_on` indique que le service `backend` dépend de `db`. Cela signifie que Docker Compose lancera d’abord la base de données avant le backend. Attention : cela ne garantit pas que la base est **prête** à recevoir des connexions, seulement qu’elle a démarré.
-
-### Les volumes : persister les données
-
-Dans l’exemple, deux types de volumes sont utilisés.
-
-Le premier est un **volume nommé** (`db_data`). Il est déclaré dans la section `volumes` en bas du fichier. Docker gère son emplacement sur le disque, ce qui garantit que les données de la base MySQL persistent même si le conteneur est supprimé.
-
-Le second est un **montage de dossier local** (`./html:/usr/share/nginx/html`). Cela permet de développer localement : tout changement dans le dossier `html` sur votre machine est immédiatement visible dans le conteneur.
-
-Exemple concret : imaginez un développeur à Abidjan qui travaille sur un site d’e-commerce. Il modifie un fichier HTML dans son éditeur. Grâce au volume, le navigateur affiche la version mise à jour sans avoir à reconstruire l’image.
-
-### Les réseaux : connecter les conteneurs
-
-Par défaut, Docker Compose crée un **réseau privé** pour tous les services du fichier. Cela signifie que chaque conteneur peut communiquer avec les autres en utilisant leur nom de service comme nom d’hôte.
-
-Par exemple, depuis le service `backend`, vous pouvez vous connecter à la base de données via l’URL : `mysql://db:3306/app_db`. Le nom `db` est automatiquement résolu par Docker.
-
-Cela simplifie énormément la configuration : pas besoin de gérer des adresses IP statiques ou des ports exposés publiquement. C’est idéal pour un environnement de développement sécurisé et isolé.
-
-Si besoin, vous pouvez définir des réseaux personnalisés :
-
-```yaml
 networks:
   app-network:
     driver: bridge
 ```
 
-Puis attribuer un réseau à un service :
+Analysons ce fichier pas à pas.
+
+- **`version`** : indique la version du format Docker Compose. La version `3.8` est couramment utilisée et offre une bonne compatibilité.
+- **`services`** : chaque service correspond à un conteneur. Ici, nous avons `web`, `app`, `database` et `cache`.
+- **`image`** : spécifie l’image à utiliser. Elle peut être tirée de Docker Hub ou construite localement avec `build`.
+- **`ports`** : mappe les ports du conteneur vers ceux de la machine hôte. Par exemple, `80:80` signifie que le port 80 du conteneur est accessible via le port 80 de votre machine.
+- **`environment`** : définit les variables d’environnement nécessaires au service. Très utile pour configurer des paramètres comme les mots de passe ou les URLs.
+- **`depends_on`** : indique que le service `web` doit démarrer après le service `app`. Attention : cela ne garantit pas que l’application à l’intérieur du conteneur soit prête, seulement que le conteneur est lancé.
+- **`volumes`** : permet de persister les données. Ici, les données MySQL sont sauvegardées dans un volume nommé `db-data`.
+- **`networks`** : crée un réseau privé entre les conteneurs, permettant la communication interne via les noms de service (`database`, `cache`, etc.).
+
+### Un exemple concret : un blog WordPress avec MySQL
+
+Imaginons que vous êtes développeur au Sénégal et que vous souhaitez lancer un blog WordPress pour promouvoir une initiative locale. Vous pouvez le faire en quelques minutes avec Docker Compose.
+
+Créez un fichier `docker-compose.yml` avec ce contenu :
 
 ```yaml
+version: '3.8'
+
 services:
-  web:
-    image: nginx
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: password123
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp-content:/var/www/html/wp-content
+    depends_on:
+      - mysql
     networks:
-      - app-network
+      - wp-network
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: password123
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - wp-network
+
+volumes:
+  wp-content:
+  db-data:
+
+networks:
+  wp-network:
+    driver: bridge
 ```
 
-### Démarrer, arrêter et inspecter l’application
-
-Une fois le fichier `docker-compose.yml` prêt, place à l’action.
-
-Depuis le répertoire contenant le fichier, exécutez :
-
-```bash
-docker-compose up
-```
-
-Cela construit les images si nécessaire (comme pour le service `backend`), télécharge les images manquantes (comme `mysql:8.0`), crée les volumes, les réseaux, puis démarre tous les conteneurs.
-
-Pour lancer en arrière-plan, ajoutez `-d` :
+Enregistrez ce fichier, puis exécutez dans votre terminal :
 
 ```bash
 docker-compose up -d
 ```
 
-Pour arrêter tous les services :
+Le flag `-d` lance les conteneurs en arrière-plan. Docker Compose lit le fichier, télécharge les images nécessaires, crée les volumes et les réseaux, puis démarre les deux conteneurs.
 
-```bash
-docker-compose down
+Ouvrez votre navigateur et rendez-vous sur `http://localhost:8080`. Le setup de WordPress s’affiche ! Vous pouvez maintenant configurer votre blog sans avoir installé Apache, PHP ou MySQL sur votre machine.
+
+### Gestion des dépendances et de la santé des services
+
+L’un des pièges courants avec `depends_on` est de supposer qu’un service est *prêt* juste parce qu’il a démarré. Par exemple, MySQL peut être en cours de démarrage pendant plusieurs secondes. Si WordPress tente de se connecter trop tôt, il échoue.
+
+Pour résoudre cela, Docker Compose propose l’option `healthcheck`. Voici comment l’ajouter au service MySQL :
+
+```yaml
+mysql:
+  image: mysql:8.0
+  environment:
+    MYSQL_ROOT_PASSWORD: rootpassword
+    MYSQL_DATABASE: wordpress
+    MYSQL_USER: wordpress
+    MYSQL_PASSWORD: password123
+  volumes:
+    - db-data:/var/lib/mysql
+  healthcheck:
+    test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+    timeout: 20s
+    retries: 10
+  networks:
+    - wp-network
 ```
 
-Cette commande arrête les conteneurs et les supprime. Les volumes nommés **ne sont pas supprimés** par défaut, donc vos données de base restent intactes.
+Avec ce `healthcheck`, Docker vérifie que MySQL est réellement opérationnel. Vous pouvez maintenant modifier le service WordPress pour qu’il attende que MySQL soit sain :
 
-Pour arrêter **et** supprimer les volumes (attention, perte de données !) :
-
-```bash
-docker-compose down -v
+```yaml
+wordpress:
+  image: wordpress:latest
+  ports:
+    - "8080:80"
+  environment:
+    WORDPRESS_DB_HOST: mysql
+    WORDPRESS_DB_USER: wordpress
+    WORDPRESS_DB_PASSWORD: password123
+    WORDPRESS_DB_NAME: wordpress
+  volumes:
+    - wp-content:/var/www/html/wp-content
+  depends_on:
+    mysql:
+      condition: service_healthy
+  networks:
+    - wp-network
 ```
 
-Vous pouvez aussi inspecter l’état des services :
+Grâce à `condition: service_healthy`, WordPress ne démarre que lorsque MySQL passe le test de santé.
 
-```bash
-docker-compose ps
-```
+### Bonnes pratiques pour vos projets
 
-Cela affiche tous les conteneurs en cours d’exécution, leur statut, et les ports exposés.
+1. **Utilisez des versions d’images spécifiques** : évitez `latest` en production. Préférez `mysql:8.0` ou `nginx:1.21` pour plus de stabilité.
+2. **Externalisez les secrets** : ne stockez jamais les mots de passe en clair dans le fichier `docker-compose.yml`. Utilisez des fichiers `.env` :
+   ```env
+   MYSQL_ROOT_PASSWORD=monmotdepassecomplex
+   WORDPRESS_DB_PASSWORD=autremotdepasse
+   ```
+   Puis référencez-les dans votre fichier :
+   ```yaml
+   environment:
+     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+   ```
+3. **Nommez vos volumes** : cela facilite la sauvegarde et la migration.
+4. **Documentez votre configuration** : ajoutez des commentaires dans le fichier YAML si nécessaire, surtout dans un projet d’équipe.
 
-Besoin de voir les logs en temps réel ?
+### Automatisation d’une API Node.js + MongoDB + React
 
-```bash
-docker-compose logs -f
-```
+Prenons un autre exemple typique : une application full-stack africaine pour la gestion des coopératives agricoles. Elle comprend :
 
-Le flag `-f` suit les logs, comme `tail -f`. Très utile pour déboguer une API qui ne se connecte pas à la base.
+- Un frontend React sur le port 3000
+- Une API Node.js sur le port 5000
+- Une base MongoDB
 
-### Exemple concret : Une application de gestion scolaire
-
-Imaginons un développeur à Dakar qui crée une application pour suivre les élèves d’une école. L’application comprend :
-
-- Un frontend React (dans un conteneur Nginx)
-- Une API en Python (Flask)
-- Une base PostgreSQL
-
-Voici un `docker-compose.yml` adapté :
+Voici le `docker-compose.yml` correspondant :
 
 ```yaml
 version: '3.8'
 
 services:
   frontend:
-    image: nginx:alpine
+    build: ./frontend
     ports:
-      - "80:80"
-    volumes:
-      - ./frontend/build:/usr/share/nginx/html
+      - "3000:3000"
+    networks:
+      - app-network
 
   backend:
     build: ./backend
     ports:
       - "5000:5000"
     environment:
-      DATABASE_URL: postgres://user:pass@db:5432/school_db
+      MONGODB_URI: mongodb://mongodb:27017/coopagri
     depends_on:
-      - db
+      mongodb:
+        condition: service_healthy
+    networks:
+      - app-network
 
-  db:
-    image: postgres:13
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
-      POSTGRES_DB: school_db
+  mongodb:
+    image: mongo:6
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - mongo-data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - app-network
 
 volumes:
-  pg_data:
+  mongo-data:
+
+networks:
+  app-network:
+    driver: bridge
 ```
 
-Avec ce fichier, le développeur peut :
-
-1. Construire son backend avec un `Dockerfile` dans `./backend`
-2. Générer son frontend React et placer le build dans `./frontend/build`
-3. Lancer toute l’application avec `docker-compose up`
-
-Plus besoin de configurer manuellement chaque service. En cas de problème, il relance tout avec `down` puis `up`.
-
-### Bonnes pratiques avec Docker Compose
-
-- **Toujours versionner votre `docker-compose.yml`** : Il fait partie du code source. Toute l’équipe peut reproduire l’environnement exact.
-- **Utilisez des variables d’environnement** : Pour les mots de passe ou les URLs, utilisez un fichier `.env` :
-
-  ```env
-  DB_PASSWORD=secret123
-  ```
-
-  Puis dans le `docker-compose.yml` :
-
-  ```yaml
-  environment:
-    MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-  ```
-
-- **Nommez clairement vos services** : Évitez `service1`, `service2`. Préférez `api`, `cache`, `worker`.
-- **Limitez les ressources si nécessaire** :
-
-  ```yaml
-  backend:
-    image: myapp
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-  ```
-
-Cela évite qu’un seul conteneur monopolise tout le serveur.
+Avec ce seul fichier, vous orchestrez une application complexe en une seule commande. Cela accélère le développement, favorise la collaboration entre développeurs au Cameroun, au Mali ou au Maroc, et assure que tout le monde travaille dans un environnement identique.
 
 ## Points clés
 
-- Docker Compose permet de gérer **plusieurs conteneurs** comme une seule application.
-- Le fichier `docker-compose.yml` décrit les services, volumes, réseaux et variables.
-- Les conteneurs communiquent entre eux via un **réseau privé** automatique, en utilisant leur nom de service comme hôte.
-- Les **volumes nommés** conservent les données même après l’arrêt des conteneurs.
-- Les commandes `up`, `down`, `ps` et `logs` simplifient grandement le contrôle de l’application.
-- Un seul fichier de configuration remplace des dizaines de commandes Docker manuelles.
-- Docker Compose est idéal pour les environnements de développement, mais peut aussi être utilisé en production avec précaution.
-
-Avec Docker Compose, vous passez d’un outil de conteneurisation à un outil d’**orchestration légère**, essentiel pour construire des applications modernes, même avec des ressources limitées. C’est un levier puissant pour les développeurs africains qui veulent innover rapidement, sans infrastructure lourde.
+- Docker Compose permet de gérer plusieurs conteneurs avec un seul fichier de configuration.
+- Le fichier `docker-compose.yml` décrit les services, leurs dépendances, variables d’environnement, ports, volumes et réseaux.
+- Utilisez `depends_on` avec `condition: service_healthy` pour garantir que les services démarrent dans le bon ordre et sont prêts.
+- Les volumes permettent de persister les données entre les redémarrages.
+- Les fichiers `.env` permettent de séparer les configurations sensibles du code.
+- Docker Compose est idéal pour les environnements de développement et de test, mais peut aussi être utilisé en production dans des cas simples.
+- Grâce à Docker Compose, vous pouvez monter des applications complètes (WordPress, API + frontend + base) en quelques commandes, ce qui accélère considérablement le workflow des développeurs.
