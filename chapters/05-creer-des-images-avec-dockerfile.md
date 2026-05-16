@@ -1,187 +1,247 @@
 ## Créer vos propres images avec Dockerfile
 
-Jusqu’ici, vous avez utilisé des images Docker préexistantes pour lancer des conteneurs. C’est un excellent point de départ, mais pour tirer tout le potentiel de Docker, vous devez apprendre à créer **vos propres images**. C’est là qu’intervient le **Dockerfile** : un fichier texte qui contient une suite d’instructions permettant de construire une image Docker personnalisée, pas à pas.
-
-Le Dockerfile est comme une **recette de cuisine** pour votre application. Il décrit tout ce dont vous avez besoin : l’ingrédient de base (le système d’exploitation ou le runtime), les dépendances à installer, les fichiers à copier, les ports à exposer, et la commande à exécuter au démarrage du conteneur.
+Vous savez désormais lancer des conteneurs à partir d’images existantes, mais pour développer vos propres applications de manière reproductible, vous devez apprendre à créer vos propres images. C’est ici que le **Dockerfile** entre en jeu. Un Dockerfile est un fichier texte qui contient une suite d’instructions permettant de construire une image Docker étape par étape. Chaque instruction crée une couche dans l’image, ce qui permet une construction rapide et efficace grâce à la mise en cache.
 
 ### Comprendre la structure d’un Dockerfile
 
-Un Dockerfile commence toujours par une instruction `FROM`. C’est le point de départ de votre image. Toutes les instructions suivantes s’ajoutent par couches par-dessus cette base.
+Un Dockerfile commence toujours par une instruction `FROM` et se termine généralement par `CMD` ou `ENTRYPOINT`. Voici les instructions essentielles que vous devez maîtriser :
 
-Prenons un exemple concret : vous développez une petite application web en **Node.js** pour un site de gestion de marchés locaux, comme un outil pour suivre les prix des légumes dans les marchés de Dakar ou de Lomé. Vous souhaitez la déployer de manière reproductible sur différents serveurs, y compris sur des machines avec peu de ressources.
+#### FROM : Définir l’image de base
 
-Voici à quoi pourrait ressembler votre Dockerfile :
+Toute image Docker dérive d’une image de base. L’instruction `FROM` permet de spécifier cette base. Elle est obligatoire et doit être la première ligne du Dockerfile.
 
 ```dockerfile
-# Utilisation d'une image légère de Node.js comme base
 FROM node:18-alpine
+```
 
-# Création d'un répertoire de travail à l'intérieur du conteneur
+Ici, on part d’une image légère basée sur Alpine Linux, contenant Node.js version 18. Le choix d’une image légère comme `alpine` réduit la taille finale de l’image, ce qui est crucial pour une livraison rapide, surtout si vous déployez depuis un pays où la bande passante est limitée.
+
+#### RUN : Exécuter des commandes pendant la construction
+
+L’instruction `RUN` permet d’exécuter des commandes dans le conteneur pendant la phase de construction. Elle est utilisée pour installer des dépendances, créer des répertoires, ou configurer l’environnement.
+
+```dockerfile
+RUN apk add --no-cache curl
+```
+
+Dans cet exemple, on installe `curl` sur une image Alpine. L’option `--no-cache` évite de conserver les métadonnées du gestionnaire de paquets, ce qui réduit la taille de l’image.
+
+#### COPY : Copier des fichiers locaux dans l’image
+
+Une fois les outils installés, vous devez copier le code de votre application dans l’image. C’est le rôle de `COPY`.
+
+```dockerfile
+COPY . /app
 WORKDIR /app
+```
 
-# Copie du fichier de dépendances
-COPY package.json .
+Ici, tous les fichiers du répertoire courant (.) sont copiés dans `/app` à l’intérieur de l’image. Ensuite, `WORKDIR` définit ce répertoire comme le répertoire de travail par défaut pour toutes les commandes suivantes.
 
-# Installation des dépendances
-RUN npm install
+> 💡 **Astuce** : Pour améliorer les performances, copiez d’abord le fichier de dépendances (`package.json` pour Node.js) avant de copier tout le code. Cela permet de tirer parti du cache Docker si vous modifiez uniquement le code, pas les dépendances.
 
-# Copie de tous les fichiers du projet
-COPY . .
+#### WORKDIR : Définir le répertoire de travail
 
-# Exposition du port 3000 (port par défaut de nombreuses apps Node.js)
+Comme vu ci-dessus, `WORKDIR` change le répertoire courant dans le conteneur. C’est une bonne pratique de l’utiliser systématiquement pour éviter les chemins relatifs complexes.
+
+```dockerfile
+WORKDIR /var/www/html
+```
+
+Cela est particulièrement utile pour les développeurs PHP sur des projets locaux, comme une application de gestion scolaire ou un site de e-commerce local.
+
+#### ENV : Définir des variables d’environnement
+
+Les variables d’environnement permettent de configurer l’application sans modifier le code. L’instruction `ENV` les définit de manière permanente dans l’image.
+
+```dockerfile
+ENV NODE_ENV=production
+ENV PORT=3000
+```
+
+Ces variables peuvent ensuite être utilisées dans vos scripts ou par votre application. Par exemple, une API développée à Dakar ou à Abidjan peut utiliser `PORT` pour écouter sur un port spécifique, sans avoir à le coder en dur.
+
+#### EXPOSE : Indiquer les ports utilisés
+
+L’instruction `EXPOSE` indique à Docker que le conteneur écoutera sur un port spécifique à l’exécution. Elle ne publie pas le port, elle le documente seulement.
+
+```dockerfile
 EXPOSE 3000
+```
 
-# Commande à exécuter au démarrage du conteneur
+Pour que le port soit accessible depuis l’hôte, il faudra toujours utiliser `-p` lors du `docker run`.
+
+#### CMD : Définir la commande par défaut
+
+`CMD` spécifie la commande qui s’exécutera lorsque le conteneur démarrera. Il ne peut y avoir qu’un seul `CMD` dans un Dockerfile.
+
+```dockerfile
 CMD ["node", "server.js"]
 ```
 
-Analysons chaque instruction une par une.
+Cette forme, appelée *exec form*, est recommandée car elle permet à Docker de gérer correctement les signaux (comme `SIGTERM` lors d’un `docker stop`).
 
-### Les instructions clés du Dockerfile
+> ⚠️ **Attention** : Ne confondez pas `CMD` et `RUN`. `RUN` s’exécute pendant la construction, `CMD` au démarrage du conteneur.
 
-#### `FROM` : Choisir la base de votre image
+### Exemple complet : Containeriser une application Node.js simple
 
-`FROM` spécifie l’image de base à utiliser. Il est crucial de bien la choisir. Pour une application web simple, préférez une **version alpine** de Node.js, comme `node:18-alpine`. Alpine Linux est une distribution extrêmement légère (moins de 10 Mo), ce qui réduit considérablement la taille de l’image finale.
+Imaginons une application Node.js développée par un jeune développeur à Yaoundé. Elle affiche "Bienvenue sur mon API locale !" sur le port 3000.
 
-Cela fait une différence majeure dans les régions où la bande passante est limitée ou coûteuse. Une image de 50 Mo se télécharge bien plus vite qu’une de 500 Mo, surtout sur un réseau 3G.
-
-#### `WORKDIR` : Définir le répertoire de travail
-
-`WORKDIR /app` crée et définit un répertoire de travail à l’intérieur du conteneur. Toutes les commandes suivantes (`COPY`, `RUN`, etc.) s’exécuteront dans ce répertoire. Cela évite les chemins absolus longs et rend le Dockerfile plus lisible.
-
-#### `COPY` : Copier vos fichiers dans l’image
-
-`COPY` permet de transférer des fichiers de votre machine hôte vers l’image. Ici, nous copions d’abord `package.json`, puis nous exécutons `npm install`, avant de copier le reste du code.
-
-**Pourquoi copier `package.json` en premier ?**
-
-Parce que Docker met en cache chaque couche. Si vous modifiez un fichier de code, Docker n’a pas besoin de réinstaller les dépendances à chaque fois, car la couche `npm install` n’est pas invalide tant que `package.json` n’a pas changé. Cela accélère grandement les reconstructions locales et sur serveur.
-
-#### `RUN` : Exécuter des commandes pendant la construction
-
-`RUN npm install` installe les dépendances de votre application. Cette commande s’exécute **pendant la construction de l’image**, pas au démarrage du conteneur. C’est une étape cruciale pour préparer votre environnement.
-
-#### `EXPOSE` : Indiquer les ports utilisés
-
-`EXPOSE 3000` informe Docker que le conteneur écoute sur le port 3000. Ce n’est **pas** une ouverture de port automatique. Pour accéder à l’application depuis l’extérieur, vous devrez toujours utiliser `-p 3000:3000` lors du lancement du conteneur.
-
-#### `CMD` : Commande par défaut au démarrage
-
-`CMD ["node", "server.js"]` définit la commande qui s’exécute quand le conteneur démarre. C’est celle qui lance votre application. Vous pouvez la remplacer au moment du lancement avec un argument passé à `docker run`.
-
-> ⚠️ Attention : `CMD` ne peut être qu’une seule par Dockerfile. Si vous en mettez plusieurs, seule la dernière sera prise en compte.
-
-### Construire et tester votre image
-
-Avec votre Dockerfile prêt, place à la construction. Depuis le répertoire contenant le Dockerfile, exécutez :
-
-```bash
-docker build -t mon-app-marche .
-```
-
-L’option `-t` permet de **taguer** (nommer) votre image. Le point `.` indique que le contexte de construction est le répertoire courant.
-
-Une fois l’image construite, lancez un conteneur :
-
-```bash
-docker run -p 3000:3000 mon-app-marche
-```
-
-Votre application est désormais accessible via `http://localhost:3000`.
-
-### Optimiser la taille de vos images
-
-La taille des images est un enjeu crucial, surtout dans les environnements à ressources limitées. Voici des pratiques simples mais efficaces :
-
-#### Utiliser des images de base légères
-
-Privilégiez `alpine` ou `slim` :
-- `node:18-alpine` (~120 Mo)
-- `node:18` (~900 Mo)
-
-#### Éviter les fichiers inutiles
-
-Utilisez un fichier `.dockerignore` pour exclure les fichiers non nécessaires à la construction, comme `node_modules/`, `.git/`, ou les logs.
-
-Exemple de `.dockerignore` :
+Voici la structure du projet :
 
 ```
-node_modules
-.git
-.gitignore
-README.md
-*.log
+mon-api/
+├── server.js
+├── package.json
+└── Dockerfile
 ```
 
-Cela évite de copier des fichiers inutiles dans le contexte de build, ce qui améliore les performances.
-
-#### Fusionner les commandes RUN quand c’est pertinent
-
-Chaque instruction `RUN` crée une nouvelle couche. Pour réduire le nombre de couches, regroupez les commandes avec `&&` :
-
-```dockerfile
-RUN apk add --no-cache curl && \
-    npm install --production
-```
-
-Ici, `--no-cache` évite de stocker les paquets téléchargés, réduisant encore la taille.
-
-### Erreurs courantes à éviter
-
-- **Oublier de copier les fichiers** : Vérifiez que `COPY . .` est bien présente après `npm install`.
-- **Utiliser `CMD` pour installer des dépendances** : Tout ce qui doit s’exécuter pendant la construction doit être dans `RUN`, pas `CMD`.
-- **Exposer un port non utilisé** : Assurez-vous que votre application écoute bien sur le port indiqué dans `EXPOSE`.
-- **Ne pas taguer l’image** : Sans tag, Docker génère un ID aléatoire, ce qui rend difficile son utilisation ultérieure.
-
-### Bonnes pratiques pour un développement local efficace
-
-Dans les régions où Internet est intermittent, chaque téléchargement compte. Voici quelques conseils :
-
-1. **Construisez localement avant de déployer** : Testez votre Dockerfile sur votre machine avant de l’envoyer sur un serveur distant.
-2. **Utilisez des images mises en cache** : Docker réutilise les couches inchangées. Structurez votre Dockerfile pour que les parties stables (comme les dépendances) soient construites en premier.
-3. **Préférez les registres locaux ou régionaux** : Si vous travaillez en équipe, envisagez un registry privé dans votre région pour réduire la latence.
-
-### Exemple complet d’application web en Node.js
-
-Voici un exemple minimal d’application `server.js` que vous pourriez utiliser :
+Contenu de `server.js` :
 
 ```javascript
 const express = require('express');
 const app = express();
+const port = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send('<h1>Bienvenue sur le Marché Connecté !</h1>');
+  res.send('Bienvenue sur mon API locale !');
 });
 
-app.listen(3000, () => {
-  console.log('Serveur démarré sur le port 3000');
+app.listen(port, () => {
+  console.log(`Serveur en écoute sur le port ${port}`);
 });
 ```
 
-Avec le `package.json` suivant :
+Contenu de `package.json` :
 
 ```json
 {
-  "name": "marche-connecte",
+  "name": "mon-api",
   "version": "1.0.0",
   "main": "server.js",
   "dependencies": {
     "express": "^4.18.0"
+  },
+  "scripts": {
+    "start": "node server.js"
   }
 }
 ```
 
-Ce petit projet, empaqueté en image Docker, peut être déployé sur n’importe quel serveur avec Docker installé — que ce soit un VPS à Abidjan, un serveur local à Yaoundé, ou un cloud international.
+Et maintenant, le **Dockerfile** :
 
-## Points clés à retenir
+```dockerfile
+# Image de base légère
+FROM node:18-alpine
 
-- Le **Dockerfile** est un fichier de recette pour construire une image Docker personnalisée.
-- Les instructions `FROM`, `RUN`, `COPY`, `CMD`, et `EXPOSE` sont fondamentales.
-- `FROM` doit utiliser une image légère comme `alpine` pour réduire la taille.
-- Copiez `package.json` avant les autres fichiers pour profiter du cache Docker.
-- Utilisez `.dockerignore` pour exclure les fichiers inutiles.
-- La taille de l’image impacte directement les temps de build, de transfert et de déploiement — optimisez-la.
-- Testez toujours votre image localement avant de la déployer.
-- Une bonne structure de Dockerfile rend votre application portable, rapide à construire, et facile à maintenir.
+# Créer le répertoire d'application
+WORKDIR /app
 
-En maîtrisant le Dockerfile, vous passez du statut d’utilisateur de conteneurs à celui de **créateur d’environnements reproductibles**. C’est une compétence essentielle pour tout développeur moderne, surtout dans des contextes où la fiabilité et l’efficacité sont primordiales.
+# Copier les dépendances d'abord
+COPY package*.json ./
+RUN npm install --production
+
+# Copier le code source
+COPY . .
+
+# Définir les variables d'environnement
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Exposer le port
+EXPOSE 3000
+
+# Commande de démarrage
+CMD ["npm", "start"]
+```
+
+### Construire, taguer et inspecter l’image
+
+Une fois le Dockerfile prêt, place à la construction :
+
+```bash
+docker build -t mon-api:1.0 .
+```
+
+- `-t mon-api:1.0` : permet de **taguer** l’image avec un nom et une version.
+- Le `.` indique que le contexte de construction est le répertoire courant.
+
+> 🔄 **Astuce Empire du Web** : Utilisez des tags significatifs comme `1.0`, `latest`, ou `dev` pour mieux gérer vos versions.
+
+Pour voir l’image créée :
+
+```bash
+docker images
+```
+
+Vous devriez voir `mon-api` dans la liste.
+
+Pour inspecter les détails de l’image :
+
+```bash
+docker inspect mon-api:1.0
+```
+
+Cela affiche des informations techniques comme les couches, les variables d’environnement, ou la commande par défaut.
+
+### Bonnes pratiques à retenir
+
+1. **Utilisez des images de base légères**  
+   Privilégiez `alpine`, `slim`, ou `distroless` pour réduire la taille et les vulnérabilités.
+
+2. **Minimisez le nombre de couches**  
+   Combine les commandes `RUN` avec `&&` pour éviter des couches inutiles.
+
+   ```dockerfile
+   RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+   ```
+
+3. **N’exécutez pas en root**  
+   Créez un utilisateur non privilégié pour des raisons de sécurité :
+
+   ```dockerfile
+   RUN addgroup -g 1001 -S appuser && \
+       adduser -u 1001 -S appuser -G appuser
+   USER appuser
+   ```
+
+4. **Utilisez un fichier .dockerignore**  
+   Comme `.gitignore`, il exclut des fichiers inutiles (comme `node_modules`, `.git`, logs) du contexte de construction.
+
+   ```
+   node_modules
+   .git
+   .env
+   ```
+
+### Erreurs fréquentes et comment les éviter
+
+- **Erreur : "file not found" lors du COPY**  
+  Vérifiez que le fichier existe dans le contexte de construction. Docker ne voit que ce que vous lui transmettez via `.`.
+
+- **Erreur : L’application ne démarre pas**  
+  Vérifiez que la commande dans `CMD` correspond bien au binaire disponible. Utilisez la forme tableau (`["node", "app.js"]`) pour éviter les problèmes de shell.
+
+- **Image trop lourde ?**  
+  Vérifiez les couches inutiles, utilisez des images de base légères, et nettoyez les caches dans les commandes `RUN`.
+
+- **Port non accessible ?**  
+  N’oubliez pas que `EXPOSE` ne publie pas le port. Utilisez `-p 3000:3000` dans `docker run`.
+
+### Lancer le conteneur pour tester
+
+```bash
+docker run -d -p 3000:3000 --name api-container mon-api:1.0
+```
+
+Accédez à `http://localhost:3000` – vous devriez voir le message de bienvenue.
+
+### Points clés
+
+- Un **Dockerfile** permet de créer une image personnalisée de manière automatisée et reproductible.
+- Les instructions `FROM`, `RUN`, `COPY`, `WORKDIR`, `ENV`, `EXPOSE` et `CMD` sont fondamentales.
+- Construire une image légère et sécurisée passe par le choix d’une base légère, l’éviction des privilèges root, et l’usage de `.dockerignore`.
+- Le tagging (`-t`) permet de mieux organiser vos images.
+- Les erreurs courantes viennent souvent d’un mauvais chemin de copie, d’un port non publié, ou d’une commande mal formulée.
+- Tester chaque étape avec `docker build` et `docker run` est essentiel pour valider votre Dockerfile.
+
+Vous êtes maintenant capable de transformer n’importe quelle application en image Docker. Dans le prochain chapitre, nous verrons comment partager des données entre conteneurs grâce aux **volumes**, et comment les faire communiquer via des **réseaux Docker**.
